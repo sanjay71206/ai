@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>StockVision AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<style>
+:root{--bg:#f1f4fb;--g:rgba(255,255,255,.7);--b:rgba(60,80,140,.18);--t:#0f1830;--m:#5a6788;--ac:#3b82f6;--cy:#06b6d4;--vi:#8b5cf6;--up:#16a34a;--dn:#dc2626;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#070b1a;--g:rgba(20,30,60,.55);--b:rgba(140,170,255,.16);--t:#e6ecff;--m:#8d9bc4;--up:#34d399;--dn:#f87171}}
+:root[data-theme=dark]{--bg:#070b1a;--g:rgba(20,30,60,.55);--b:rgba(140,170,255,.16);--t:#e6ecff;--m:#8d9bc4;--up:#34d399;--dn:#f87171}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:radial-gradient(900px 500px at 10% -10%,rgba(59,130,246,.25),transparent),radial-gradient(800px 500px at 100% 0,rgba(139,92,246,.22),transparent),var(--bg);color:var(--t);font:14px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}
+.glass{background:var(--g);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--b);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+header{position:sticky;top:0;z-index:5;margin:10px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.logo{font-weight:800;background:linear-gradient(90deg,var(--ac),var(--cy),var(--vi));-webkit-background-clip:text;background-clip:text;color:transparent;font-size:18px}
+input,select,button{font:inherit;color:var(--t);background:var(--g);border:1px solid var(--b);border-radius:10px;padding:7px 10px}
+button{cursor:pointer;transition:.15s}button:hover{border-color:var(--ac);transform:translateY(-1px)}
+button.pri{background:linear-gradient(90deg,var(--ac),var(--vi));color:#fff;border:0}
+button.on{border-color:var(--cy);color:var(--cy)}
+.sp{flex:1}.badge{font-size:11px;padding:3px 8px;border-radius:99px;border:1px solid var(--b);color:var(--m)}
+.demo{color:#f59e0b;border-color:#f59e0b}
+.wrap{display:flex;gap:12px;margin:0 10px 90px}
+nav{width:190px;padding:10px;display:flex;flex-direction:column;gap:6px;align-self:flex-start;position:sticky;top:76px}
+nav.col{width:56px}nav.col span{display:none}nav button{text-align:left}
+main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.card{padding:12px;transition:.2s}.card:hover{transform:translateY(-3px)}
+.card small{color:var(--m)}.card b{display:block;font-size:20px}
+.up{color:var(--up)}.dn{color:var(--dn)}
+.panel{padding:14px}h3{margin:0 0 8px}
+svg{width:100%;height:auto;display:block}
+.tip{position:absolute;pointer-events:none;padding:6px 9px;font-size:12px;display:none;z-index:3}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid var(--b);text-align:left}
+.float{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));padding:12px 14px;max-width:300px;z-index:6}
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--cy);animation:p 1s infinite}
+@keyframes p{50%{opacity:.2}}
+.hide{display:none}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.note{color:var(--m);font-size:12px}
+@media(max-width:700px){.wrap{flex-direction:column}nav{width:auto;flex-direction:row;overflow-x:auto;position:static}nav.col{width:auto}nav.col span{display:inline}}
+</style></head><body>
+<header class="glass">
+<span class="logo">◈ StockVision AI</span>
+<input id="q" placeholder="Ticker e.g. NVDA" size="10"><button id="go">Search</button>
+<span class="badge" id="ds">Checking backend…</span>
+<span class="sp"></span>
+<button id="th">◐ Theme</button><button id="cl">☰</button>
+</header>
+<div class="wrap">
+<nav class="glass" id="nav"></nav>
+<main>
+<div id="p_dash">
+ <div class="cards" id="cards"></div>
+ <div class="panel glass" style="margin-top:12px;position:relative">
+  <div class="row"><h3 id="ct" style="margin:0">—</h3><span class="sp"></span>
+   <span id="rg" class="row"></span></div>
+  <div class="row" style="margin:8px 0">
+   <label>Lookback <select id="lb"><option>10</option><option selected>20</option><option>40</option></select></label>
+   <label>Horizon <select id="hz"><option>5</option><option selected>10</option><option>20</option><option>30</option></select> days</label>
+   <button class="pri" id="tr">Train LSTM &amp; Forecast</button>
+   <span id="st" class="note"></span></div>
+  <div id="chart"></div><div class="tip glass" id="tip"></div>
+  <div class="note">— solid: observed close · - - violet: LSTM test-period prediction · - - cyan (shaded): future model estimate. Not investment advice.</div>
+ </div>
+</div>
+<div id="p_perf" class="hide"><div class="panel glass" id="perf"></div></div>
+<div id="p_astar" class="hide"><div class="panel glass">
+ <h3>AI Strategy Path Planner (A*)</h3>
+ <div class="row"><select id="sc"><option value="c">Conservative (target 30% equity)</option><option value="b" selected>Balanced (target 60%)</option><option value="g">Growth (target 90%)</option></select>
+ <button class="pri" id="ra">Run A*</button></div>
+ <div id="as"></div>
+</div></div>
+<div id="p_wl" class="hide"><div class="panel glass"><h3>Watchlist (stored locally)</h3><div class="row"><button id="wa">+ Add current ticker</button></div><div id="wl"></div></div></div>
+</main></div>
+<div class="float glass" id="fl">Training a model…</div>
+<script>
+const $=s=>document.querySelector(s);
+let S={t:'AAPL',n:130,data:null,res:null,tab:'dash',wl:['AAPL','MSFT','GOOGL','NVDA','TSLA','RELIANCE.NS']};
+try{const w=JSON.parse(localStorage.getItem('wl'));if(w)S.wl=w}catch(e){}
+const saveWL=()=>{try{localStorage.setItem('wl',JSON.stringify(S.wl))}catch(e){}};
+const f=(x,d=2)=>Number(x).toFixed(d);
+const tabs=[['dash','▦','Overview / Predictions'],['perf','◎','Model Performance'],['astar','⌬','A* Strategy Planner'],['wl','★','Watchlist']];
+$('#nav').innerHTML=tabs.map(t=>`<button data-t="${t[0]}">${t[1]} <span>${t[2]}</span></button>`).join('');
+function show(t){S.tab=t;tabs.forEach(x=>$('#p_'+x[0]).classList.toggle('hide',x[0]!==t));
+ document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+ if(t==='perf')perf();if(t==='wl')wl();}
+$('#nav').onclick=e=>{const b=e.target.closest('button');if(b)show(b.dataset.t)};
+$('#cl').onclick=()=>$('#nav').classList.toggle('col');
+$('#th').onclick=()=>{const r=document.documentElement,d=getComputedStyle(r).getPropertyValue('--bg').trim()==='#070b1a';r.dataset.theme=d?'light':'dark'};
+// ---- backend (FastAPI) client; falls back to demo mode if offline ----
+const API=location.protocol==='file:'?'http://localhost:8000':'';let LIVE=false;
+async function api(p,o){const r=await fetch(API+p,o?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(o)}:undefined);let j=null;try{j=await r.json()}catch(e){}
+ if(!r.ok)throw new Error((j&&(typeof j.detail==='string'?j.detail:j.error))||('HTTP '+r.status));return j}
+function badge(){const b=$('#ds');b.className='badge'+(LIVE?'':' demo');b.textContent=LIVE?'● LIVE · yfinance via FastAPI':'DEMO DATA — backend offline, synthetic prices'}
+async function health(){try{const c=new AbortController();setTimeout(()=>c.abort(),2500);const r=await fetch(API+'/api/health',{signal:c.signal});LIVE=r.ok&&(await r.json()).status==='ok'}catch(e){LIVE=false}badge()}
+const toData=j=>j.dates.map((d,i)=>({d:new Date(d),c:j.close[i],v:j.volume[i]}));
+function hydrate(m,p){const i=S.data.findIndex(x=>dt(x.d)===m.test_dates[0]);
+ S.res={t:m.ticker,pr:m.test_pred,te0:i,fc:p?p.forecast:[],fd:p?p.forecast_dates.map(d=>new Date(d)):[],lstm:m.metrics.lstm,base:m.metrics.baseline,loss:m.history.loss,vloss:m.history.val_loss,lb:m.config.lookback,hz:p?p.forecast.length:0,E:m.history.loss.length,n:m.n_rows,at:m.trained_at,live:true}}
+async function trainLive(){const m=await api('/api/model/train',{ticker:S.t,lookback:+$('#lb').value,epochs:20});
+ hydrate(m,await api('/api/predict',{ticker:S.t,horizon:+$('#hz').value}))}
+async function loadLive(t){$('#st').innerHTML='<span class="pulse"></span> fetching '+t+'…';
+ try{const j=await api('/api/stock/'+encodeURIComponent(t)+'?period=5y');S.t=j.ticker;S.data=toData(j);S.res=null;show('dash');
+  try{const m=await api('/api/model/metrics/'+S.t);hydrate(m,await api('/api/predict',{ticker:S.t,horizon:+$('#hz').value}));$('#st').textContent='Loaded saved model · last data '+j.last_date}
+  catch(e){$('#st').textContent='Last data '+j.last_date+' · not trained yet — click Train'}
+  draw();cards();perf();float()}catch(e){$('#st').textContent='Error: '+e.message;$('#fl').textContent='Error: '+e.message}}
+async function wlLive(){const el=$('#wl');el.innerHTML='<p class="note"><span class="pulse"></span> loading quotes…</p>';
+ const rows=await Promise.all(S.wl.map(async t=>{try{const j=await api('/api/stock/'+encodeURIComponent(t)+'?period=1mo'),l=j.close.at(-1),c=(l/j.close.at(-2)-1)*100;
+  return`<tr><td><a href="#" data-o="${t}">${t}</a></td><td>${f(l)}</td><td class="${c>=0?'up':'dn'}">${c>=0?'+':''}${f(c)}%</td><td class="note">${j.last_date}</td><td><button data-x="${t}">✕</button></td></tr>`}catch(e){return`<tr><td>${t}</td><td colspan="3" class="dn">${e.message}</td><td><button data-x="${t}">✕</button></td></tr>`}}));
+ el.innerHTML='<table>'+rows.join('')+'</table><p class="note">Live via yfinance (may be delayed); date = latest observation.</p>'}
+// ---- demo data (seeded random walk) ----
+function rng(s){return()=>(s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296}
+function gen(t){let h=7;for(const c of t)h=(Math.imul(h,31)+c.charCodeAt(0))>>>0;const r=rng(h);
+ const g=()=>Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.2832*r());
+ let p=40+r()*300;const vol=.011+r()*.01,dr=.0003+(r()-.4)*.0006;const d=[];let day=new Date();
+ const dates=[];while(dates.length<760){if(day.getDay()%6)dates.unshift(new Date(day));day=new Date(day-864e5)}
+ for(let i=0;i<760;i++){const rt=dr+vol*g();p*=Math.exp(rt);d.push({d:dates[i],c:p,v:1e6*(1+r())*(1+Math.abs(rt)*40)})}return d}
+const dt=d=>d.toISOString().slice(0,10);
+// ---- LSTM ----
+async function train(){
+ const lb=+$('#lb').value,hz=+$('#hz').value,c=S.data.map(x=>x.c),n=c.length;
+ const tr=Math.floor(.7*n),va=Math.floor(.85*n);
+ const mn=Math.min(...c.slice(0,tr)),mx=Math.max(...c.slice(0,tr)),sc=x=>(x-mn)/(mx-mn),inv=x=>x*(mx-mn)+mn;
+ const set={tr:[[],[]],va:[[],[]],te:[[],[]]};
+ for(let i=lb;i<n;i++){const k=i<tr?'tr':i<va?'va':'te';set[k][0].push(...c.slice(i-lb,i).map(sc));set[k][1].push(sc(c[i]))}
+ const T=k=>[tf.tensor3d(set[k][0],[set[k][1].length,lb,1]),tf.tensor2d(set[k][1],[set[k][1].length,1])];
+ const [xt,yt]=T('tr'),[xv,yv]=T('va'),[xe]=T('te');
+ const m=tf.sequential();m.add(tf.layers.lstm({units:24,inputShape:[lb,1]}));m.add(tf.layers.dense({units:1}));
+ m.compile({optimizer:tf.train.adam(.01),loss:'meanSquaredError'});
+ const E=15;const h=await m.fit(xt,yt,{epochs:E,batchSize:32,shuffle:false,validationData:[xv,yv],
+  callbacks:{onEpochEnd:async(e)=>{$('#st').innerHTML=`<span class="pulse"></span> epoch ${e+1}/${E}`;await tf.nextFrame()}}});
+ const pr=Array.from(m.predict(xe).dataSync()).map(inv),te0=va,ac=[],pv=[];
+ for(let j=0;j<pr.length;j++){ac.push(c[te0+j]);pv.push(c[te0+j-1])}
+ const mt=(p)=>({mae:ac.reduce((s,a,j)=>s+Math.abs(a-p[j]),0)/ac.length,rmse:Math.sqrt(ac.reduce((s,a,j)=>s+(a-p[j])**2,0)/ac.length),
+  dir:100*ac.filter((a,j)=>Math.sign(a-pv[j])===Math.sign(p[j]-pv[j])).length/ac.length});
+ let w=c.slice(-lb).map(sc);const fc=[];
+ for(let i=0;i<hz;i++){const y=m.predict(tf.tensor3d(w,[1,lb,1])).dataSync()[0];fc.push(inv(y));w=[...w.slice(1),y]}
+ let day=new Date(S.data[n-1].d);const fd=[];while(fd.length<hz){day=new Date(+day+864e5);if(day.getDay()%6)fd.push(new Date(day))}
+ S.res={t:S.t,pr,te0,fc,fd,lstm:mt(pr),base:mt(pv),loss:h.history.loss,vloss:h.history.val_loss,lb,hz,E,tr,va,n,at:new Date().toLocaleString()};
+ [xt,yt,xv,yv,xe].forEach(x=>x.dispose());m.dispose();
+}
+async function run(){
+ $('#tr').disabled=true;$('#fl').textContent=LIVE?'Training TensorFlow LSTM on the server…':'Training LSTM in your browser…';
+ try{if(LIVE){$('#st').innerHTML='<span class="pulse"></span> training on server (can take a minute)';await trainLive()}else await train();$('#st').textContent='Trained ✓'}catch(e){$('#st').textContent='Error: '+e.message;$('#fl').textContent='Error: '+e.message}
+ $('#tr').disabled=false;draw();cards();perf();float();
+}
+function float(){const r=S.res;if(!r){if(!/^Error/.test($('#fl').textContent))$('#fl').textContent='No forecast yet — train a model.';return}const l=S.data.at(-1).c,e=r.fc.at(-1),ch=(e/l-1)*100;
+ $('#fl').innerHTML=`<b>AI forecast · ${r.t}</b><br>${r.hz}-day model estimate: <b class="${ch>=0?'up':'dn'}">${f(e)} (${ch>=0?'+':''}${f(ch,1)}%)</b><br><span class="note">Estimate from demo data. Not advice.</span>`}
+function cards(){const d=S.data,l=d.at(-1),p=d.at(-2),ch=(l.c/p.c-1)*100;
+ const rets=d.slice(-61).map((x,i,a)=>i?Math.log(x.c/a[i-1].c):0).slice(1),mu=rets.reduce((a,b)=>a+b)/rets.length;
+ const vol=Math.sqrt(rets.reduce((a,b)=>a+(b-mu)**2,0)/rets.length)*Math.sqrt(252)*100,r=S.res;
+ $('#cards').innerHTML=[['Latest close ('+dt(l.d)+')',f(l.c)],['Daily change',`<span class="${ch>=0?'up':'dn'}">${ch>=0?'+':''}${f(ch)}%</span>`],['Volatility (60d, ann.)',f(vol,1)+'%'],
+ ['LSTM forecast',r?f(r.fc.at(-1))+` <small>(${r.hz}d)</small>`:'—'],['Test RMSE',r?f(r.lstm.rmse):'—']].map(x=>`<div class="card glass"><small>${x[0]}</small><b>${x[1]}</b></div>`).join('')}
+// ---- chart ----
+function draw(){
+ const D=S.data,r=S.res&&S.res.t===S.t?S.res:null,k=Math.min(S.n,D.length),off=D.length-k,W=800,H=300,V=60,P=36;
+ const fcN=r?r.fc.length:0,N=k+fcN,X=i=>P+i*(W-P-8)/(N-1);
+ const vals=D.slice(off).map(x=>x.c);if(r){r.fc.forEach(v=>vals.push(v));r.pr.forEach((v,j)=>{if(r.te0+j>=off)vals.push(v)})}
+ const lo=Math.min(...vals),hi=Math.max(...vals),Y=v=>10+(H-30)*(1-(v-lo)/(hi-lo||1));
+ const path=a=>a.map((p,i)=>(i?'L':'M')+f(p[0],1)+' '+f(p[1],1)).join('');
+ const act=D.slice(off).map((x,i)=>[X(i),Y(x.c)]);
+ const pre=r?r.pr.map((v,j)=>[r.te0+j-off,v]).filter(a=>a[0]>=0).map(a=>[X(a[0]),Y(a[1])]):[];
+ const fcp=r?[act.at(-1),...r.fc.map((v,i)=>[X(k+i),Y(v)])]:[];
+ const mv=Math.max(...D.slice(off).map(x=>x.v));
+ let s=`<svg viewBox="0 0 ${W} ${H+V}" id="sv">`;
+ for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4,y=Y(v);s+=`<line x1="${P}" x2="${W}" y1="${y}" y2="${y}" stroke="var(--b)"/><text x="2" y="${y+4}" font-size="10" fill="var(--m)">${f(v,0)}</text>`}
+ if(r)s+=`<rect x="${X(k-1)}" y="0" width="${W-X(k-1)}" height="${H-20}" fill="var(--cy)" opacity=".08"/>`;
+ s+=`<path d="${path(act)}" fill="none" stroke="var(--ac)" stroke-width="2"/>`;
+ if(pre.length)s+=`<path d="${path(pre)}" fill="none" stroke="var(--vi)" stroke-width="1.6" stroke-dasharray="5 3"/>`;
+ if(fcp.length)s+=`<path d="${path(fcp)}" fill="none" stroke="var(--cy)" stroke-width="2.2" stroke-dasharray="2 4"/>`;
+ D.slice(off).forEach((x,i)=>{const h=V*.9*x.v/mv;s+=`<rect x="${X(i)-1}" y="${H+V-h}" width="2" height="${h}" fill="var(--m)" opacity=".4"/>`});
+ s+=`<line id="cx" y1="0" y2="${H}" stroke="var(--m)" opacity="0"/></svg>`;
+ $('#chart').innerHTML=s;$('#ct').textContent=S.t+(r?'':' (not trained)');
+ const svg=$('#sv'),tip=$('#tip');
+ svg.onmousemove=e=>{const b=svg.getBoundingClientRect(),px=(e.clientX-b.left)/b.width*W,i=Math.max(0,Math.min(N-1,Math.round((px-P)/((W-P-8)/(N-1)))));
+  let txt;if(i<k){const x=D[off+i];txt=`${dt(x.d)}<br>Actual: <b>${f(x.c)}</b><br>Vol: ${(x.v/1e6).toFixed(2)}M`;
+   const j=off+i-(r?r.te0:1e9);if(r&&j>=0&&j<r.pr.length)txt+=`<br>LSTM test pred: <b>${f(r.pr[j])}</b>`}
+  else txt=`${dt(r.fd[i-k])}<br>Forecast (estimate): <b>${f(r.fc[i-k])}</b>`;
+  tip.innerHTML=txt;tip.style.display='block';const pb=tip.parentElement.getBoundingClientRect();
+  tip.style.left=Math.min(e.clientX-pb.left+12,pb.width-150)+'px';tip.style.top=(e.clientY-pb.top-60)+'px';
+  const cx=$('#cx');cx.setAttribute('x1',X(i));cx.setAttribute('x2',X(i));cx.setAttribute('opacity','.6')};
+ svg.onmouseleave=()=>{tip.style.display='none';$('#cx').setAttribute('opacity',0)};
+}
+$('#rg').innerHTML=[['1M',21],['3M',63],['6M',126],['1Y',252],['5Y',1260]].map(x=>`<button data-n="${x[1]}" class="${x[1]===130?'':''}">${x[0]}</button>`).join('');
+$('#rg').onclick=e=>{const b=e.target.closest('button');if(!b)return;S.n=+b.dataset.n;
+ [...$('#rg').children].forEach(x=>x.classList.toggle('on',x===b));draw()};
+// ---- performance ----
+function perf(){const r=S.res,el=$('#perf');
+ if(!r){el.innerHTML='<h3>Model Performance</h3><p class="note">No evaluation yet. Train a model on the Overview page.</p>';return}
+ const L=(a,b)=>{const m=Math.max(...a,...b),P=(v,i)=>`${i*(380/(a.length-1))},${110-100*v/m}`;
+  return `<svg viewBox="0 0 380 115"><polyline fill="none" stroke="var(--ac)" stroke-width="2" points="${a.map(P).join(' ')}"/><polyline fill="none" stroke="var(--vi)" stroke-width="2" stroke-dasharray="4 3" points="${b.map(P).join(' ')}"/></svg>`};
+ const row=(n,k,d)=>`<tr><td>${n}</td><td>${f(r.lstm[k],d)}</td><td>${f(r.base[k],d)}</td><td>${(k==='dir'?r.lstm[k]>r.base[k]:r.lstm[k]<r.base[k])?'LSTM':'Baseline'}</td></tr>`;
+ el.innerHTML=`<h3>Model Performance — ${r.t}</h3><p class="note">Evaluated on the held-out chronological test set (last 15%). Baseline = predict yesterday's close. The baseline often wins on random-walk data — that is expected and reported honestly.</p>
+ <table><tr><th>Metric</th><th>LSTM</th><th>Naive baseline</th><th>Better</th></tr>${row('MAE','mae',3)}${row('RMSE','rmse',3)}${row('Directional accuracy %','dir',1)}</table>
+ <h3 style="margin-top:14px">Training (blue) vs validation (violet dashed) loss</h3>${L(r.loss,r.vloss)}
+ <h3>Configuration</h3><p class="note">${r.live?'LSTM(32) → Dropout(0.1) → Dense(1) · Adam lr 0.001 · early stopping':'LSTM(24) → Dense(1) · Adam lr 0.01'} · ${r.E} epochs · batch 32 · lookback ${r.lb} · horizon ${r.hz}d · MinMax scaler fit on train only · split 70/15/15 chronological<br>
+ Dataset: ${dt(S.data[0].d)} → ${dt(S.data.at(-1).d)} (${r.n} days, ${r.live?'yfinance':'DEMO synthetic'}) · trained ${r.at}</p>`}
+// ---- A* ----
+const SC={c:{t:30,r:2,n:'Conservative'},b:{t:60,r:1,n:'Balanced'},g:{t:90,r:.3,n:'Growth'}};
+function astar(sc,start=50){const {t,r}=SC[sc],cost=(a,b)=>1+Math.abs(b-a)/20+r*(b/100)**2*2,h=e=>Math.ceil(Math.abs(e-t)/20);
+ const open=[{e:start,g:0,f:h(start),p:null}],closed=new Set(),G={[start]:0},par={},log=[],seen=[];
+ while(open.length){open.sort((a,b)=>a.f-b.f);const n=open.shift();if(closed.has(n.e))continue;closed.add(n.e);
+  log.push(`Expand ${n.e}% equity · g=${f(n.g)} h=${h(n.e)} f=${f(n.f)}`);
+  if(n.e===t){const path=[];let c=t;while(c!==undefined){path.unshift(c);c=par[c]}return{path,cost:n.g,log,closed:[...closed],ex:seen}}
+  for(const d of[-20,-10,10,20]){const e=n.e+d;if(e<0||e>100||closed.has(e))continue;const g=n.g+cost(n.e,e);seen.push([n.e,e,cost(n.e,e)]);
+   if(G[e]===undefined||g<G[e]){G[e]=g;par[e]=n.e;open.push({e,g,f:g+h(e)})}}}
+ return null}
+$('#ra').onclick=async()=>{const sc=$('#sc').value,o=SC[sc];let R;try{R=LIVE?await api('/api/strategy/astar',{scenario:sc,start_equity:50}):astar(sc);R.ex=R.ex||R.expanded}catch(e){$('#as').innerHTML='<p class="dn">Error: '+e.message+'</p>';return}
+ const X=e=>30+e*6.4,eds=new Set();R.path.forEach((e,i)=>i&&eds.add(R.path[i-1]+'>'+e));
+ let s='<svg viewBox="0 0 700 220">';
+ const E={};R.ex.forEach(a=>E[a[0]+'>'+a[1]]=a[2]);
+ for(const k in E){const[a,b]=k.split('>').map(Number),on=eds.has(k),mx=(X(a)+X(b))/2,up=a<b?-1:1;
+  s+=`<path d="M${X(a)} 110 Q${mx} ${110+up*Math.abs(a-b)*3} ${X(b)} 110" fill="none" stroke="${on?'var(--up)':'var(--m)'}" stroke-width="${on?3:1}" opacity="${on?1:.45}"/>`;
+  s+=`<text x="${mx}" y="${110+up*Math.abs(a-b)*1.5+(up<0?-2:10)}" font-size="9" fill="${on?'var(--up)':'var(--m)'}" text-anchor="middle">${f(E[k],2)}</text>`}
+ for(let e=0;e<=100;e+=10){const p=R.path.includes(e),c=R.closed.includes(e);
+  s+=`<circle cx="${X(e)}" cy="110" r="13" fill="${p?'var(--up)':c?'var(--vi)':'var(--g)'}" stroke="var(--b)"/><text x="${X(e)}" y="114" font-size="9" text-anchor="middle" fill="${p||c?'#fff':'var(--t)'}">${e}</text>`}
+ $('#as').innerHTML=s+`</svg><p><b>${o.n} path:</b> ${R.path.join('% → ')}% · total cost <b>${f(R.cost,2)}</b></p>
+ <p class="note">Nodes = equity allocation (rest is cash), start 50%. Green = selected path, purple = expanded (closed set), edge labels = transition costs. Moves change equity by ±10 or ±20 points. Cost = 1 + size/20 + risk-aversion × exposure²; h(n) = ⌈|equity − target|/20⌉, never overestimating (each move costs ≥ 1 and shifts ≤ 20), so A* returns the cheapest path under these assumptions. A* does <b>not</b> predict prices; this is a hypothetical, assumption-based exercise with no performance guarantee.</p>
+ <details><summary>Search log (${R.log.length} expansions)</summary><pre class="note">${R.log.join('\n')}</pre></details>`};
+// ---- watchlist ----
+async function wl(){if(LIVE)return wlLive();wlDemo()}
+function wlDemo(){$('#wl').innerHTML='<table>'+S.wl.map(t=>{const d=gen(t),l=d.at(-1).c,c=(l/d.at(-2).c-1)*100;
+ return`<tr><td><a href="#" data-o="${t}">${t}</a></td><td>${f(l)}</td><td class="${c>=0?'up':'dn'}">${c>=0?'+':''}${f(c)}%</td><td><button data-x="${t}">✕</button></td></tr>`}).join('')+'</table><p class="note">Demo values (synthetic).</p>'}
+$('#wl').onclick=e=>{const o=e.target.dataset.o,x=e.target.dataset.x;if(o){e.preventDefault();load(o)}if(x){S.wl=S.wl.filter(t=>t!==x);saveWL();wl()}};
+$('#wa').onclick=()=>{if(!S.wl.includes(S.t)){S.wl.push(S.t);saveWL()}wl()};
+// ---- load ----
+async function load(t){t=(t||'').toUpperCase().trim();if(!/^[A-Z0-9.\-^]{1,12}$/.test(t)){$('#st').textContent='Invalid ticker';return}
+ if(LIVE){await loadLive(t);return}
+ S.t=t;S.data=gen(t);S.res=null;show('dash');draw();cards();run()}
+$('#go').onclick=()=>load($('#q').value);$('#q').onkeydown=e=>{if(e.key==='Enter')load($('#q').value)};
+$('#tr').onclick=run;
+$('#hz').onchange=async()=>{if(!(LIVE&&S.res&&S.res.live))return;try{const p=await api('/api/predict',{ticker:S.t,horizon:+$('#hz').value});S.res.fc=p.forecast;S.res.fd=p.forecast_dates.map(d=>new Date(d));S.res.hz=p.forecast.length;draw();cards();float()}catch(e){$('#st').textContent='Error: '+e.message}};
+show('dash');health().then(()=>load('AAPL'));
+</script></body></html>
